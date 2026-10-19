@@ -6,6 +6,8 @@
 // Backends are dynamically imported so the Vercel bundle never pulls in
 // node:sqlite (the SQLite module only exists in the local dev/demo path).
 
+import './env.js';
+
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
 const usePostgres = connectionString.length > 0;
 
