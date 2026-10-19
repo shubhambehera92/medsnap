@@ -17,6 +17,7 @@ build/
 server/data/*.db
 server/data/*.db-journal
 server/data/*.db-wal
+server/data/*.db-shm
 
 # Logs
 *.log
@@ -31,3 +32,4 @@ Thumbs.db
 # Editors
 .vscode/
 .idea/
+

@@ -1,168 +1,232 @@
+// Demo data — duplicated verbatim from client/src/data/demo.ts (the client is
+// never imported by the server). Seeded idempotently: a table is only filled
+// when it is empty, so real edits made through the API survive restarts.
+// Run `node src/seed.js --reset` to force a clean reseed.
+
 import { pathToFileURL } from 'node:url';
-import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
-import { PATIENTS, sampleCaptures } from './seedData.js';
-import { recordAudit } from './auditStore.js';
+import { upsertRow } from './repo.js';
+import { COLUMNS, JSON_COLUMNS } from './columns.js';
+import { DEFAULT_SETTINGS, SETTINGS_ID } from './defaults.js';
 
-const insertPatient = db.prepare(`
-  INSERT INTO patients
-    (id, name, dob, sex, ward, mrn, diagnosis, allergies, consent, consentAt, fhirPatientId, fhirSynced, createdAt)
-  VALUES
-    (@id, @name, @dob, @sex, @ward, @mrn, @diagnosis, @allergies, @consent, @consentAt, @fhirPatientId, @fhirSynced, @createdAt)
-  ON CONFLICT (id) DO UPDATE SET
-    name = excluded.name, dob = excluded.dob, sex = excluded.sex, ward = excluded.ward,
-    mrn = excluded.mrn, diagnosis = excluded.diagnosis, allergies = excluded.allergies,
-    consent = excluded.consent, consentAt = excluded.consentAt,
-    fhirPatientId = excluded.fhirPatientId, fhirSynced = excluded.fhirSynced,
-    createdAt = excluded.createdAt
-`);
+export const DEMO_USERS = [
+  { id: 'nurse-1', name: 'Sarah Johnson', email: 'sarah.johnson@medsnap.demo', role: 'Nurse', status: 'Active', lastActive: '2024-01-15T10:30:00Z' },
+  { id: 'nurse-2', name: 'Emily Chen', email: 'emily.chen@medsnap.demo', role: 'Nurse', status: 'Active', lastActive: '2024-01-15T09:45:00Z' },
+  { id: 'doctor-1', name: 'Dr. Michael Brown', email: 'michael.brown@medsnap.demo', role: 'Doctor', status: 'Active', lastActive: '2024-01-15T11:00:00Z' },
+  { id: 'doctor-2', name: 'Dr. Priya Patel', email: 'priya.patel@medsnap.demo', role: 'Doctor', status: 'Active', lastActive: '2024-01-15T08:20:00Z' },
+  { id: 'admin-1', name: 'David Wilson', email: 'david.wilson@medsnap.demo', role: 'Admin', status: 'Active', lastActive: '2024-01-15T07:30:00Z' },
+  { id: 'admin-2', name: 'Lisa Thompson', email: 'lisa.thompson@medsnap.demo', role: 'Admin', status: 'Active', lastActive: '2024-01-15T12:15:00Z' },
+];
 
-const insertCapture = db.prepare(`
-  INSERT INTO captures
-    (id, patientId, userId, userName, type, note, createdAt, expiresAt, mimeType, imageBase64, thumbnail,
-     sha256, sizeBytes, syncStatus, classifierSource, classifierConfidence,
-     fhirDocumentReferenceId, fhirBinaryId, fhirStatus, fhirError)
-  VALUES
-    (@id, @patientId, @userId, @userName, @type, @note, @createdAt, @expiresAt, @mimeType, @imageBase64, @thumbnail,
-     @sha256, @sizeBytes, @syncStatus, @classifierSource, @classifierConfidence,
-     @fhirDocumentReferenceId, @fhirBinaryId, @fhirStatus, @fhirError)
-  ON CONFLICT (id) DO UPDATE SET
-    patientId = excluded.patientId, userId = excluded.userId, userName = excluded.userName,
-    type = excluded.type, note = excluded.note, createdAt = excluded.createdAt,
-    expiresAt = excluded.expiresAt, mimeType = excluded.mimeType, imageBase64 = excluded.imageBase64,
-    thumbnail = excluded.thumbnail, sha256 = excluded.sha256, sizeBytes = excluded.sizeBytes,
-    syncStatus = excluded.syncStatus, classifierSource = excluded.classifierSource,
-    classifierConfidence = excluded.classifierConfidence,
-    fhirDocumentReferenceId = excluded.fhirDocumentReferenceId, fhirBinaryId = excluded.fhirBinaryId,
-    fhirStatus = excluded.fhirStatus, fhirError = excluded.fhirError
-`);
+export const DEMO_PATIENTS = [
+  { id: 'p1', name: 'Asha Verma', age: 54, msId: 'MS-1001', caseNumber: 'CN-1001', ward: 'Ward 4', consentStatus: 'On record', consentExpiry: '2024-04-15' },
+  { id: 'p2', name: 'James Mitchell', age: 62, msId: 'MS-1002', caseNumber: 'CN-1002', ward: 'Ward 3', consentStatus: 'On record', consentExpiry: '2024-02-28' },
+  { id: 'p3', name: 'Maria Santos', age: 45, msId: 'MS-1003', caseNumber: 'CN-1003', ward: 'Ward 4', consentStatus: 'Missing' },
+  { id: 'p4', name: 'Robert Johnson', age: 38, msId: 'MS-1004', caseNumber: 'CN-1004', ward: 'Ward 5', consentStatus: 'On record', consentExpiry: '2024-03-20' },
+  { id: 'p5', name: 'Linda Park', age: 71, msId: 'MS-1005', caseNumber: 'CN-1005', ward: 'Ward 3', consentStatus: 'Expired', consentExpiry: '2023-12-01' },
+];
 
-function seedAuditForCaptures(captures) {
-  for (const c of captures) {
-    recordAudit({
-      id: randomUUID(),
-      userId: c.userId,
-      userName: c.userName,
-      role: c.userId.startsWith('dr') ? 'Doctor' : 'Nurse',
-      action: 'capture',
-      patientId: c.patientId,
-      subjectType: 'capture',
-      subjectId: c.id,
-      detail: `Captured ${c.type}${c.note ? ` — ${c.note}` : ''}`,
-      source: 'seed',
-      createdAt: c.createdAt,
-    });
-    recordAudit({
-      id: randomUUID(),
-      userId: c.userId,
-      userName: c.userName,
-      role: c.userId.startsWith('dr') ? 'Doctor' : 'Nurse',
-      action: 'sync',
-      patientId: c.patientId,
-      subjectType: 'capture',
-      subjectId: c.id,
-      detail: 'Synced to MedSnap vault + FHIR DocumentReference',
-      source: 'seed',
-      createdAt: c.createdAt,
-    });
-  }
-  // A few extra events so the audit dashboard has variety on first load.
-  const now = new Date();
-  const extra = [
-    ['share', 'Share link generated for ward 3B handover', 'dr-chen', 'Dr. Chen', 'Doctor'],
-    ['export', 'Exported timeline PDF for P-1001', 'nurse-priya', 'Nurse Priya', 'Nurse'],
-    ['view', 'Viewed wound capture for P-1001', 'nurse-priya', 'Nurse Priya', 'Nurse'],
-  ];
-  extra.forEach(([action, detail, userId, userName, role], i) => {
-    recordAudit({
-      userId,
-      userName,
-      role,
-      action,
-      patientId: 'P-1001',
-      subjectType: 'patient',
-      subjectId: 'P-1001',
-      detail,
-      source: 'seed',
-      createdAt: new Date(now.getTime() - (i + 1) * 36e5).toISOString(),
-    });
-  });
+export const DEMO_PHOTOS = [
+  {
+    id: 'photo1',
+    patientId: 'p1',
+    patientName: 'Asha Verma',
+    patientCase: 'CN-1001',
+    type: 'Wound',
+    takenBy: 'Sarah Johnson',
+    takenByRole: 'Nurse',
+    takenAt: '2024-01-15T10:00:00Z',
+    status: 'Filed',
+    quality: 92,
+    blur: false,
+    glare: false,
+    dark: false,
+    imageData: 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&q=80',
+    fhirRef: 'FHIR-DR-1001',
+    recordId: 'REC-1001',
+    priority: 'Normal',
+    reviewed: true,
+    reviewedBy: 'Dr. Michael Brown',
+    reviewedAt: '2024-01-15T14:30:00Z',
+    comments: [
+      { id: 'c1', author: 'Dr. Michael Brown', authorRole: 'Doctor', content: 'Wound showing good healing progress', timestamp: '2024-01-15T14:35:00Z' }
+    ]
+  },
+  {
+    id: 'photo2',
+    patientId: 'p1',
+    patientName: 'Asha Verma',
+    patientCase: 'CN-1001',
+    type: 'Label',
+    takenBy: 'Emily Chen',
+    takenByRole: 'Nurse',
+    takenAt: '2024-01-15T09:30:00Z',
+    status: 'Filed',
+    quality: 88,
+    blur: false,
+    glare: false,
+    dark: false,
+    imageData: 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?w=800&q=80',
+    extractedText: 'Simulated OCR (demo): Metformin 500mg',
+    fhirRef: 'FHIR-DR-1002',
+    recordId: 'REC-1002',
+  },
+  {
+    id: 'photo3',
+    patientId: 'p3',
+    patientName: 'Maria Santos',
+    patientCase: 'CN-1003',
+    type: 'Wound',
+    takenBy: 'Sarah Johnson',
+    takenByRole: 'Nurse',
+    takenAt: '2024-01-15T11:00:00Z',
+    status: 'Queued',
+    quality: 65,
+    blur: true,
+    glare: false,
+    dark: false,
+    imageData: 'https://images.unsplash.com/photo-1551601651-2a8555f1a136?w=800&q=80',
+    fhirRef: 'FHIR-DR-1003',
+    recordId: 'REC-1003',
+  },
+  {
+    id: 'photo4',
+    patientId: 'p2',
+    patientName: 'James Mitchell',
+    patientCase: 'CN-1002',
+    type: 'Insurance card',
+    takenBy: 'Emily Chen',
+    takenByRole: 'Nurse',
+    takenAt: '2024-01-15T08:45:00Z',
+    status: 'Filed',
+    quality: 95,
+    blur: false,
+    glare: false,
+    dark: false,
+    imageData: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&q=80',
+    extractedText: 'Simulated OCR (demo): Blue Cross Blue Shield',
+    fhirRef: 'FHIR-DR-1004',
+    recordId: 'REC-1004',
+  },
+  {
+    id: 'photo5',
+    patientId: 'p4',
+    patientName: 'Robert Johnson',
+    patientCase: 'CN-1004',
+    type: 'Home test',
+    takenBy: 'Sarah Johnson',
+    takenByRole: 'Nurse',
+    takenAt: '2024-01-15T10:30:00Z',
+    status: 'Held',
+    heldReason: 'Patient verification pending',
+    quality: 90,
+    blur: false,
+    glare: false,
+    dark: false,
+    imageData: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&q=80',
+    recordId: 'REC-1005',
+  },
+  {
+    id: 'photo6',
+    patientId: 'p5',
+    patientName: 'Linda Park',
+    patientCase: 'CN-1005',
+    type: 'Wound',
+    takenBy: 'Emily Chen',
+    takenByRole: 'Nurse',
+    takenAt: '2024-01-15T09:15:00Z',
+    status: 'Filed',
+    quality: 85,
+    blur: false,
+    glare: true,
+    dark: false,
+    imageData: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=800&q=80',
+    fhirRef: 'FHIR-DR-1006',
+    recordId: 'REC-1006',
+    priority: 'High',
+  },
+];
+
+export const DEMO_AUDIT = [
+  { id: 'a1', userId: 'nurse-1', userName: 'Sarah Johnson', role: 'Nurse', action: 'Login', timestamp: '2024-01-15T08:00:00Z', device: 'Chrome 120 - Windows' },
+  { id: 'a2', userId: 'nurse-1', userName: 'Sarah Johnson', role: 'Nurse', action: 'Capture Wound Photo', patient: 'Asha Verma', timestamp: '2024-01-15T10:00:00Z', device: 'Chrome 120 - Windows', details: 'Quality: 92/100' },
+  { id: 'a3', userId: 'nurse-2', userName: 'Emily Chen', role: 'Nurse', action: 'Record Consent', patient: 'Maria Santos', timestamp: '2024-01-15T11:05:00Z', device: 'Safari 17 - iPad' },
+  { id: 'a4', userId: 'doctor-1', userName: 'Dr. Michael Brown', role: 'Doctor', action: 'Review Photo', patient: 'Asha Verma', timestamp: '2024-01-15T14:30:00Z', device: 'Chrome 120 - Windows' },
+  { id: 'a5', userId: 'admin-1', userName: 'David Wilson', role: 'Admin', action: 'Update Policy', timestamp: '2024-01-15T07:30:00Z', device: 'Chrome 120 - Windows', details: 'Changed retention days from 365 to 730' },
+];
+
+export const DEMO_CHAT_THREADS = [
+  { id: 'ct1', patientId: 'p1', patientName: 'Asha Verma', lastMessage: 'Wound showing improvement', lastMessageAt: '2024-01-15T15:00:00Z', participants: ['nurse-1', 'doctor-1'] },
+  { id: 'ct2', patientId: 'p3', patientName: 'Maria Santos', lastMessage: 'Need consent form signed', lastMessageAt: '2024-01-15T11:30:00Z', participants: ['nurse-1', 'doctor-1'] },
+];
+
+export const DEMO_MESSAGES = [
+  { id: 'm1', threadId: 'ct1', author: 'Sarah Johnson', authorRole: 'Nurse', content: 'Wound photo uploaded for Asha Verma — edges look cleaner today.', type: 'text', timestamp: '2024-01-15T14:40:00Z' },
+  { id: 'm2', threadId: 'ct1', author: 'Sarah Johnson', authorRole: 'Nurse', content: 'See the capture in the vault.', type: 'photo', photoId: 'photo1', timestamp: '2024-01-15T14:41:00Z' },
+  { id: 'm3', threadId: 'ct1', author: 'Dr. Michael Brown', authorRole: 'Doctor', content: 'Reviewed — continue current dressing. Good progress.', type: 'text', timestamp: '2024-01-15T15:00:00Z' },
+  { id: 'm4', threadId: 'ct2', author: 'Dr. Michael Brown', authorRole: 'Doctor', content: 'Maria Santos consent is missing — please capture before we can file.', type: 'text', timestamp: '2024-01-15T11:20:00Z' },
+  { id: 'm5', threadId: 'ct2', author: 'Sarah Johnson', authorRole: 'Nurse', content: 'On my way to Ward 4.', type: 'text', timestamp: '2024-01-15T11:30:00Z' },
+];
+
+export const DEMO_DEVICES = [
+  { id: 'd1', name: 'Sarah-Johnson-PC', os: 'Windows 11', status: 'Active', lastSeen: '2024-01-15T10:30:00Z', registeredBy: 'sarah.johnson@medsnap.demo' },
+  { id: 'd2', name: 'Nurse-iPad-01', os: 'iPadOS 17', status: 'Wipe pending', lastSeen: '2024-01-14T18:00:00Z', registeredBy: 'admin-1' },
+  { id: 'd3', name: 'Admin-Station-02', os: 'macOS 14', status: 'Wiped', lastSeen: '2024-01-13T09:00:00Z', registeredBy: 'admin-1' },
+];
+
+const SEED_TABLES = [
+  ['users', () => DEMO_USERS],
+  ['patients', () => DEMO_PATIENTS],
+  ['photos', () => DEMO_PHOTOS],
+  ['audit', () => DEMO_AUDIT],
+  ['chat_threads', () => DEMO_CHAT_THREADS],
+  ['chat_messages', () => DEMO_MESSAGES],
+  ['devices', () => DEMO_DEVICES],
+  ['settings', () => [{ id: SETTINGS_ID, ...DEFAULT_SETTINGS }]],
+];
+
+async function rowCount(table) {
+  const row = await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get();
+  return Number(row?.n ?? 0);
 }
 
-/** Insert demo data. No-op if patients already exist unless `reset` is true. */
+/** Fill one table when it is empty. Returns the number of rows written. */
+async function seedTable(table, rows) {
+  if ((await rowCount(table)) > 0) return 0;
+  for (const row of rows) {
+    await upsertRow(table, row, COLUMNS[table], JSON_COLUMNS[table]);
+  }
+  return rows.length;
+}
+
+/** Seed demo data. No-op per table when it already has rows unless `reset`. */
 export async function seed({ reset = false } = {}) {
-  const existing = await db.prepare('SELECT COUNT(*) AS n FROM patients').get();
-  if (existing?.n > 0 && !reset) {
-    return { seeded: false, patients: Number(existing.n) };
-  }
   if (reset) {
-    await db.exec('DELETE FROM captures; DELETE FROM patients; DELETE FROM audit;');
+    for (const [table] of SEED_TABLES) await db.exec(`DELETE FROM ${table}`);
   }
-
-  const now = new Date().toISOString();
-  for (const p of PATIENTS) {
-    await insertPatient.run({
-      id: p.id,
-      name: p.name,
-      dob: p.dob,
-      sex: p.sex,
-      ward: p.ward,
-      mrn: p.mrn,
-      diagnosis: p.diagnosis,
-      allergies: JSON.stringify(p.allergies || []),
-      consent: !!p.consent,
-      consentAt: p.consent ? now : null,
-      fhirPatientId: p.fhirPatientId,
-      fhirSynced: false,
-      createdAt: now,
-    });
+  const counts = {};
+  for (const [table, rows] of SEED_TABLES) {
+    counts[table] = await seedTable(table, rows());
   }
-
-  const captures = sampleCaptures();
-  for (const c of captures) {
-    await insertCapture.run({
-      id: c.id,
-      patientId: c.patientId,
-      userId: c.userId,
-      userName: c.userName,
-      type: c.type,
-      note: c.note,
-      createdAt: c.createdAt,
-      expiresAt: c.expiresAt,
-      mimeType: c.mimeType,
-      imageBase64: c.imageBase64,
-      thumbnail: c.thumbnail,
-      sha256: c.sha256,
-      sizeBytes: c.sizeBytes,
-      syncStatus: c.syncStatus,
-      classifierSource: c.classifierSource,
-      classifierConfidence: c.classifierConfidence,
-      fhirDocumentReferenceId: c.fhirDocumentReferenceId,
-      fhirBinaryId: c.fhirBinaryId,
-      fhirStatus: c.fhirStatus,
-      fhirError: null,
-    });
-  }
-  seedAuditForCaptures(captures);
-
-  return { seeded: true, patients: PATIENTS.length, captures: captures.length };
+  return { seeded: Object.values(counts).some((n) => n > 0), counts };
 }
 
-/** Called at server boot: seed only when the database is empty. */
+/** Called at boot: seed only when the database is empty (idempotent). */
 export async function ensureSeed() {
   return seed({ reset: false });
 }
 
-const isDirectRun =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isDirectRun) {
   try {
     const result = await seed({ reset: process.argv.includes('--reset') });
-    console.log('[seed]', result);
-    if (result.seeded) {
-      console.log('[seed] Demo patients: P-1001 (consent), P-1002 (consent), P-1003 (NO consent)');
-    }
+    console.log('[seed]', JSON.stringify(result));
+    console.log(
+      result.seeded
+        ? '[seed] Demo data written (users, patients, photos, audit, chat, devices, settings).'
+        : '[seed] Database already populated — nothing to do (use --reset to force).'
+    );
   } catch (err) {
     console.error('[seed] failed', err);
     process.exit(1);

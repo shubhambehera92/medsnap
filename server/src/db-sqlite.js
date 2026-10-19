@@ -6,81 +6,47 @@
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_PATH, DATA_DIR } from './config.js';
+import { TABLES, LEGACY_TABLES, INDEXES, buildCreateSql } from './schema.js';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const raw = new DatabaseSync(DB_PATH);
 
-raw.exec(`
-  PRAGMA journal_mode = WAL;
+raw.exec('PRAGMA journal_mode = WAL;');
 
-  CREATE TABLE IF NOT EXISTS users (
-    id        TEXT PRIMARY KEY,
-    name      TEXT NOT NULL,
-    role      TEXT NOT NULL,
-    createdAt TEXT NOT NULL
-  );
+/** Declared column names of an existing table, or null when it does not exist. */
+function existingColumns(name) {
+  const table = raw
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(name);
+  if (!table) return null;
+  return raw
+    .prepare(`PRAGMA table_info("${name}")`)
+    .all()
+    .map((col) => col.name);
+}
 
-  CREATE TABLE IF NOT EXISTS patients (
-    id            TEXT PRIMARY KEY,
-    name          TEXT NOT NULL,
-    dob           TEXT,
-    sex           TEXT,
-    ward          TEXT,
-    mrn           TEXT,
-    diagnosis     TEXT,
-    allergies     TEXT,
-    consent       INTEGER NOT NULL DEFAULT 0,
-    consentAt     TEXT,
-    fhirPatientId TEXT,
-    fhirSynced    INTEGER NOT NULL DEFAULT 0,
-    createdAt     TEXT NOT NULL
-  );
+/**
+ * Idempotent schema creation. A table left over from the legacy API (same name,
+ * different columns) is dropped and recreated so the new schema always matches.
+ */
+function initSchema() {
+  for (const legacy of LEGACY_TABLES) {
+    raw.exec(`DROP TABLE IF EXISTS "${legacy}";`);
+  }
+  for (const table of TABLES) {
+    const existing = existingColumns(table.name);
+    if (existing) {
+      const wanted = Object.keys(table.columns);
+      const stale = wanted.some((col) => !existing.includes(col));
+      if (stale) raw.exec(`DROP TABLE IF EXISTS "${table.name}";`);
+    }
+    raw.exec(`${buildCreateSql('sqlite', table)};`);
+  }
+  raw.exec(`${INDEXES.join(';\n')};`);
+}
 
-  CREATE TABLE IF NOT EXISTS captures (
-    id                       TEXT PRIMARY KEY,
-    patientId                TEXT NOT NULL,
-    userId                   TEXT,
-    userName                 TEXT,
-    type                     TEXT NOT NULL,
-    note                     TEXT,
-    createdAt                TEXT NOT NULL,
-    expiresAt                TEXT,
-    mimeType                 TEXT,
-    imageBase64              TEXT,
-    thumbnail                TEXT,
-    sha256                   TEXT,
-    sizeBytes                INTEGER,
-    syncStatus               TEXT NOT NULL DEFAULT 'synced',
-    classifierSource         TEXT,
-    classifierConfidence     REAL,
-    fhirDocumentReferenceId  TEXT,
-    fhirBinaryId             TEXT,
-    fhirStatus               TEXT NOT NULL DEFAULT 'pending',
-    fhirError                TEXT,
-    FOREIGN KEY (patientId) REFERENCES patients(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS audit (
-    id          TEXT PRIMARY KEY,
-    userId      TEXT,
-    userName    TEXT,
-    role        TEXT,
-    action      TEXT NOT NULL,
-    patientId   TEXT,
-    subjectType TEXT,
-    subjectId   TEXT,
-    detail      TEXT,
-    source      TEXT DEFAULT 'server',
-    createdAt   TEXT NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_captures_patient ON captures (patientId, createdAt);
-  CREATE INDEX IF NOT EXISTS idx_captures_sync ON captures (syncStatus);
-  CREATE INDEX IF NOT EXISTS idx_audit_created ON audit (createdAt);
-  CREATE INDEX IF NOT EXISTS idx_audit_action ON audit (action);
-  CREATE INDEX IF NOT EXISTS idx_audit_patient ON audit (patientId);
-`);
+initSchema();
 
 /** Normalise JS booleans to SQLite integers and undefined to NULL. */
 function convertValue(value) {

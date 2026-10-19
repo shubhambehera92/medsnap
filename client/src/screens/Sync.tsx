@@ -13,7 +13,7 @@ import { Photo } from '@/types';
 
 export const Sync = () => {
   const [tab, setTab] = useState<'queued' | 'held'>('queued');
-  const { photos, patients, updatePhoto } = useAppStore();
+  const { photos, patients, updatePhoto, deletePhoto } = useAppStore();
   const { isOnline, showToast } = useUIStore();
   const [deleteTarget, setDeleteTarget] = useState<Photo | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
@@ -41,7 +41,7 @@ export const Sync = () => {
   const confirmDelete = () => {
     if (!deleteTarget || !deleteReason.trim()) return;
     const { id, patientName } = deleteTarget;
-    useAppStore.setState((state) => ({ photos: state.photos.filter((p) => p.id !== id) }));
+    deletePhoto(id);
     logAudit({ action: 'Delete Photo', patient: patientName, target: id, details: `Reason: ${deleteReason.trim()}` });
     showToast('Photo deleted (reason logged)', 'success');
     setDeleteTarget(null);

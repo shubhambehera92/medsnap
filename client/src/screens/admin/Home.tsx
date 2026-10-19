@@ -3,17 +3,16 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Card } from '@/components/ui/Card';
 import { useAuthStore } from '@/stores/authStore';
 import { useAppStore } from '@/stores/appStore';
-import { DEMO_USERS } from '@/data/demo';
 import { UserCog, Database, Monitor, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const AdminHome = () => {
   const { user } = useAuthStore();
-  const { auditLog, devices } = useAppStore();
+  const { auditLog, devices, users } = useAppStore();
   const navigate = useNavigate();
 
   const tiles = [
-    { label: 'Users', value: DEMO_USERS.length, icon: UserCog, to: '/admin/users', tint: 'bg-primary-light text-primary' },
+    { label: 'Users', value: users.length, icon: UserCog, to: '/admin/users', tint: 'bg-primary-light text-primary' },
     { label: 'Audit entries', value: auditLog.length, icon: Database, to: '/admin/audit', tint: 'bg-info-light text-info' },
     { label: 'Devices', value: devices.length, icon: Monitor, to: '/admin/devices', tint: 'bg-warning-light text-warning' },
     {

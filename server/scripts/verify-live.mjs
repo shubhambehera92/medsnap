@@ -1,4 +1,4 @@
-// Post-deploy verification of static/PWA assets + hydrated capture shape.
+// Post-deploy verification of static/PWA assets + the open demo API shape.
 // Usage: node scripts/verify-live.mjs [baseUrl]
 const BASE = process.argv[2] || 'https://medsnap-two.vercel.app';
 
@@ -27,20 +27,21 @@ fails += (await show('icon-512', '/icons/icon-512.png', okBin)) ? 0 : 1;
 const sw = await fetch(BASE + '/sw.js');
 console.log('  sw.js cache-control:', sw.headers.get('cache-control'));
 
-// Hydrated capture shape on Postgres (syncStatus / fhir must exist now).
-const login = await fetch(BASE + '/api/auth/login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ name: 'Verify', role: 'Nurse' }),
-});
-const { token } = await login.json();
-const list = await fetch(BASE + '/api/captures?limit=2', {
-  headers: { Authorization: 'Bearer ' + token },
-});
-const { captures } = await list.json();
-for (const c of captures.slice(0, 2)) {
-  console.log('capture:', c.id, '| sync=' + c.syncStatus, '| fhir=' + (c.fhir && c.fhir.status), '| imageBase64 in payload=' + ('imageBase64' in c));
-}
+// Open demo API (no auth) — health, backend and a couple of seeded collections.
+const api = async (label, path, check) => {
+  const r = await fetch(BASE + path);
+  let json = null;
+  try { json = await r.json(); } catch { /* ignore */ }
+  const ok = r.status === 200 && check(json);
+  console.log(ok ? 'PASS' : 'FAIL', label.padEnd(34), r.status, JSON.stringify(json)?.slice(0, 90));
+  return ok;
+};
 
-console.log(fails === 0 ? 'ALL STATIC CHECKS PASS' : `${fails} STATIC CHECKS FAILED`);
+fails += (await api('GET /api/health', '/api/health', (j) => j.ok === true && j.service === 'medsnap-api' && typeof j.db === 'string')) ? 0 : 1;
+fails += (await api('GET /api/users', '/api/users', (j) => j.users?.length === 6 && j.users[0].email?.includes('@'))) ? 0 : 1;
+fails += (await api('GET /api/patients', '/api/patients', (j) => j.patients?.length === 5 && typeof j.patients[0].age === 'number')) ? 0 : 1;
+fails += (await api('GET /api/photos', '/api/photos', (j) => Array.isArray(j.photos) && typeof j.photos[0].blur === 'boolean')) ? 0 : 1;
+fails += (await api('GET /api/settings', '/api/settings', (j) => typeof j.settings?.consentText === 'string')) ? 0 : 1;
+
+console.log(fails === 0 ? 'ALL STATIC + API CHECKS PASS' : `${fails} CHECKS FAILED`);
 process.exit(fails === 0 ? 0 : 1);

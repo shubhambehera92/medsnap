@@ -5,14 +5,16 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 
 import { config, CLIENT_DIST } from './config.js';
-import { authenticate } from './auth.js';
+import { dbKind } from './db.js';
 import { ensureSeed } from './seed.js';
 
-import authRoutes from './routes/auth.js';
+import usersRoutes from './routes/users.js';
 import patientRoutes from './routes/patients.js';
-import captureRoutes from './routes/captures.js';
+import photoRoutes from './routes/photos.js';
 import auditRoutes from './routes/audit.js';
-import syncRoutes from './routes/sync.js';
+import chatRoutes from './routes/chat.js';
+import deviceRoutes from './routes/devices.js';
+import settingsRoutes from './routes/settings.js';
 
 const isVercel = process.env.VERCEL === '1' || process.env.MEDSNAP_SERVERLESS === '1';
 
@@ -34,40 +36,49 @@ export async function buildApp() {
 
   await fastify.register(cors, { origin: true });
 
-  // Global rate limit; individual routes can override (see auth login).
+  // Global rate limit.
   await fastify.register(rateLimit, {
     max: 300,
     timeWindow: '1 minute',
     allowList: [],
   });
 
-  fastify.decorate('authenticate', authenticate);
+  // Every error is JSON: { error: "message" }.
+  fastify.setErrorHandler((err, _req, reply) => {
+    const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+    if (status >= 500) fastify.log.error(err);
+    reply.code(status).send({ error: err.message || 'Internal error' });
+  });
 
   fastify.get('/api/health', async () => ({
     ok: true,
     service: 'medsnap-api',
-    fhir: { enabled: config.fhirEnabled, baseUrl: config.fhirBaseUrl },
+    db: dbKind,
     time: new Date().toISOString(),
   }));
 
-  await fastify.register(authRoutes);
+  await fastify.register(usersRoutes);
   await fastify.register(patientRoutes);
-  await fastify.register(captureRoutes);
+  await fastify.register(photoRoutes);
   await fastify.register(auditRoutes);
-  await fastify.register(syncRoutes);
+  await fastify.register(chatRoutes);
+  await fastify.register(deviceRoutes);
+  await fastify.register(settingsRoutes);
 
   // On Vercel the CDN serves the built PWA and the SPA fallback; the function
   // only handles /api. Locally, serve the built client when it exists.
-  if (!isVercel && fs.existsSync(CLIENT_DIST)) {
+  const serveStatic = !isVercel && fs.existsSync(CLIENT_DIST);
+  if (serveStatic) {
     await fastify.register(fastifyStatic, { root: CLIENT_DIST });
-    fastify.setNotFoundHandler((req, reply) => {
-      if (req.raw.url?.startsWith('/api')) {
-        return reply.code(404).send({ error: 'Not found' });
-      }
-      return reply.sendFile('index.html');
-    });
     fastify.log.info(`Serving PWA from ${CLIENT_DIST}`);
   }
+
+  fastify.setNotFoundHandler((req, reply) => {
+    if (serveStatic && !req.raw.url?.startsWith('/api')) {
+      return reply.sendFile('index.html');
+    }
+    return reply.code(404).send({ error: 'Not found' });
+  });
 
   // Seed demo data on boot when the database is empty (idempotent).
   const seedResult = await ensureSeed();
@@ -80,7 +91,7 @@ if (!isVercel) {
   const fastify = await buildApp();
   try {
     await fastify.listen({ port: config.port, host: config.host });
-    fastify.log.info(`MedSnap API ready — FHIR base: ${config.fhirBaseUrl}`);
+    fastify.log.info(`MedSnap API ready — ${dbKind} backend on port ${config.port}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

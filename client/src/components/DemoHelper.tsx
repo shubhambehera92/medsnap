@@ -4,6 +4,7 @@ import { ChevronUp, ChevronDown, FlaskConical } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useCaptureStore } from '@/stores/captureStore';
+import { useAppStore } from '@/stores/appStore';
 import { DEMO_USERS } from '@/data/demo';
 import { UserRole } from '@/types';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +18,8 @@ export const DemoHelper = () => {
   const { isOnline, setOnline, forceListError, setForceListError, showToast } = useUIStore();
   const setForceBlur = useCaptureStore((s) => s.setForceBlur);
   const setStep = useCaptureStore((s) => s.setStep);
+  const dataStatus = useAppStore((s) => s.status);
+  const dbEngine = useAppStore((s) => s.dbEngine);
   const navigate = useNavigate();
 
   if (!isAuthenticated) return null;
@@ -111,6 +114,18 @@ export const DemoHelper = () => {
           >
             Force blur-retake next
           </Button>
+          <div className="flex items-center justify-between border-t border-border pt-2">
+            <span className="text-xs text-ink2">API / database</span>
+            <span className="text-xs font-medium text-ink">
+              {dbEngine
+                ? `Connected · ${dbEngine}`
+                : dataStatus === 'error'
+                ? 'Offline — demo data'
+                : dataStatus === 'loading'
+                ? 'Connecting…'
+                : 'Demo data'}
+            </span>
+          </div>
         </div>
       )}
 

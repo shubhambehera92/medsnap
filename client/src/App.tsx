@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
+import { useAppStore } from './stores/appStore';
 import { ToastContainer } from './components/ui/Toast';
 import { OfflineBanner } from './components/ui/OfflineBanner';
 import { DemoHelper } from './components/DemoHelper';
@@ -89,6 +91,7 @@ function MfaRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
+      <DataBootstrap />
       <OfflineBanner />
       <ToastContainer />
       <Routes>
@@ -137,6 +140,18 @@ export default function App() {
       <DemoCredits />
     </>
   );
+}
+
+/** Loads the patient/photo/audit dataset from the API once the user is signed in. */
+function DataBootstrap() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const load = useAppStore((s) => s.load);
+
+  useEffect(() => {
+    if (isAuthenticated) load();
+  }, [isAuthenticated, load]);
+
+  return null;
 }
 
 function DemoCredits() {

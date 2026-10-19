@@ -3,8 +3,8 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
-import { DEMO_USERS } from '@/data/demo';
 import { User } from '@/types';
+import { useAppStore } from '@/stores/appStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { logAudit } from '@/lib/audit';
@@ -13,7 +13,8 @@ import { Search, UserX, UserCheck, MoreVertical, ShieldCheck, KeyRound } from 'l
 export const AdminUsers = () => {
   const { user } = useAuthStore();
   const { showToast } = useUIStore();
-  const [users, setUsers] = useState<User[]>(DEMO_USERS);
+  const users = useAppStore((s) => s.users);
+  const updateUser = useAppStore((s) => s.updateUser);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<User | null>(null);
 
@@ -25,7 +26,7 @@ export const AdminUsers = () => {
 
   const toggleStatus = (target: User) => {
     const next = target.status === 'Active' ? 'Disabled' : 'Active';
-    setUsers((list) => list.map((u) => (u.id === target.id ? { ...u, status: next } : u)));
+    updateUser(target.id, { status: next });
     logAudit({
       action: next === 'Active' ? 'Enable User' : 'Disable User',
       target: target.id,

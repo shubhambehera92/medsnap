@@ -3,6 +3,7 @@
 // Named params (@foo) and anonymous params (?) are rewritten to $n positions.
 
 import pg from 'pg';
+import { TABLES, LEGACY_TABLES, INDEXES, buildCreateSql, ROW_CASE } from './schema.js';
 
 const { Pool } = pg;
 
@@ -43,77 +44,30 @@ export function createPgDb(connectionString) {
 
   pool.on('error', (err) => console.error('[db-pg] idle client error', err?.message));
 
-  const SCHEMA = `
-    CREATE TABLE IF NOT EXISTS users (
-      id        TEXT PRIMARY KEY,
-      name      TEXT NOT NULL,
-      role      TEXT NOT NULL,
-      createdAt TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS patients (
-      id            TEXT PRIMARY KEY,
-      name          TEXT NOT NULL,
-      dob           TEXT,
-      sex           TEXT,
-      ward          TEXT,
-      mrn           TEXT,
-      diagnosis     TEXT,
-      allergies     TEXT,
-      consent       BOOLEAN NOT NULL DEFAULT FALSE,
-      consentAt     TEXT,
-      fhirPatientId TEXT,
-      fhirSynced    BOOLEAN NOT NULL DEFAULT FALSE,
-      createdAt     TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS captures (
-      id                       TEXT PRIMARY KEY,
-      patientId                TEXT NOT NULL REFERENCES patients(id),
-      userId                   TEXT,
-      userName                 TEXT,
-      type                     TEXT NOT NULL,
-      note                     TEXT,
-      createdAt                TEXT NOT NULL,
-      expiresAt                TEXT,
-      mimeType                 TEXT,
-      imageBase64              TEXT,
-      thumbnail                TEXT,
-      sha256                   TEXT,
-      sizeBytes                BIGINT,
-      syncStatus               TEXT NOT NULL DEFAULT 'synced',
-      classifierSource         TEXT,
-      classifierConfidence     DOUBLE PRECISION,
-      fhirDocumentReferenceId  TEXT,
-      fhirBinaryId             TEXT,
-      fhirStatus               TEXT NOT NULL DEFAULT 'pending',
-      fhirError                TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS audit (
-      id          TEXT PRIMARY KEY,
-      userId      TEXT,
-      userName    TEXT,
-      role        TEXT,
-      action      TEXT NOT NULL,
-      patientId   TEXT,
-      subjectType TEXT,
-      subjectId   TEXT,
-      detail      TEXT,
-      source      TEXT DEFAULT 'server',
-      createdAt   TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_captures_patient ON captures (patientId, createdAt);
-    CREATE INDEX IF NOT EXISTS idx_captures_sync ON captures (syncStatus);
-    CREATE INDEX IF NOT EXISTS idx_audit_created ON audit (createdAt);
-    CREATE INDEX IF NOT EXISTS idx_audit_action ON audit (action);
-    CREATE INDEX IF NOT EXISTS idx_audit_patient ON audit (patientId);
-  `;
-
-  /** Ensure tables/indexes exist before the first query (idempotent). */
+  /**
+   * Idempotent schema creation. Tables left over from the legacy API (same
+   * name, different columns) are dropped and recreated so the schema always
+   * matches the current contract. Runs once, before the first query.
+   */
   const ready = (async () => {
-    for (const statement of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) {
+    // Legacy table first: it references patients(id).
+    for (const legacy of LEGACY_TABLES) {
+      await pool.query(`DROP TABLE IF EXISTS ${legacy}`);
+    }
+    for (const table of TABLES) {
+      const { rows } = await pool.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = $1`,
+        [table.name]
+      );
+      if (rows.length > 0) {
+        const have = new Set(rows.map((row) => row.column_name.toLowerCase()));
+        const stale = Object.keys(table.columns).some((col) => !have.has(col.toLowerCase()));
+        if (stale) await pool.query(`DROP TABLE IF EXISTS ${table.name} CASCADE`);
+      }
+      await pool.query(buildCreateSql('postgres', table));
+    }
+    for (const statement of INDEXES) {
       await pool.query(statement);
     }
   })().catch((err) => {
@@ -151,33 +105,11 @@ export function createPgDb(connectionString) {
   }
 
   /**
-   * Postgres folds unquoted identifiers to lowercase (syncStatus → syncstatus),
+   * Postgres folds unquoted identifiers to lowercase (patientId -> patientid),
    * so SELECT * rows come back with lowercase keys while the rest of the app
-   * reads camelCase (row.syncStatus / row.imageBase64 …). Add back the
-   * camelCase aliases so mappers and routes behave identically on both backends.
+   * reads camelCase (row.patientId …). Add the camelCase aliases back so
+   * row mappers behave identically on both backends (see schema.js ROW_CASE).
    */
-  const ROW_CASE = {
-    patientId: 'patientid',
-    userId: 'userid',
-    userName: 'username',
-    createdAt: 'createdat',
-    consentAt: 'consentat',
-    expiresAt: 'expiresat',
-    mimeType: 'mimetype',
-    sizeBytes: 'sizebytes',
-    syncStatus: 'syncstatus',
-    imageBase64: 'imagebase64',
-    classifierSource: 'classifiersource',
-    classifierConfidence: 'classifierconfidence',
-    fhirPatientId: 'fhirpatientid',
-    fhirSynced: 'fhirsynced',
-    fhirDocumentReferenceId: 'fhirdocumentreferenceid',
-    fhirBinaryId: 'fhirbinaryid',
-    fhirStatus: 'fhirstatus',
-    fhirError: 'fhirerror',
-    subjectType: 'subjecttype',
-    subjectId: 'subjectid',
-  };
   const hydrateCamelCase = (row) => {
     if (!row) return row;
     for (const [camel, lower] of Object.entries(ROW_CASE)) {

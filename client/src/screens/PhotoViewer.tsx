@@ -11,13 +11,12 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useAppStore } from '@/stores/appStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
-import { DEMO_USERS } from '@/data/demo';
 import { logAudit } from '@/lib/audit';
 
 export const PhotoViewer = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { photos, updatePhoto } = useAppStore();
+  const { photos, updatePhoto, users } = useAppStore();
   const { user } = useAuthStore();
   const { showToast } = useUIStore();
   const photo = photos.find((p) => p.id === id);
@@ -69,7 +68,7 @@ export const PhotoViewer = () => {
     showToast('Export approved and logged', 'success');
   };
 
-  const colleagues = DEMO_USERS.filter((u) => u.id !== user?.id);
+  const colleagues = users.filter((u) => u.id !== user?.id);
 
   return (
     <div className="min-h-screen bg-bg pb-24">
