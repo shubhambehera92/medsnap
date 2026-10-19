@@ -1,0 +1,23 @@
+{
+  "name": "@medsnap/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
+    "smoke": "node scripts/smoke.mjs",
+    "test:serverless": "node scripts/test-serverless.mjs",
+    "verify-live": "node scripts/verify-live.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@fastify/rate-limit": "^10.2.1",
+    "@fastify/static": "^8.0.4",
+    "fastify": "^5.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.1"
+  }
+}

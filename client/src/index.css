@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * MedSnap design tokens.
+ * Light palette is the reference; dark palette is applied automatically via
+ * prefers-color-scheme. Values are space-separated RGB channels so Tailwind can
+ * compose them with opacity modifiers (e.g. bg-primary/10).
+ */
+:root {
+  --c-bg: 246 248 251; /* #F6F8FB */
+  --c-surface: 255 255 255; /* #FFFFFF */
+  --c-border: 226 232 240; /* #E2E8F0 */
+  --c-ink: 15 23 42; /* #0F172A */
+  --c-ink2: 71 85 105; /* #475569 */
+  --c-muted: 148 163 184; /* #94A3B8 */
+  --c-primary: 15 118 110; /* #0F766E */
+  --c-primary-hover: 13 95 89; /* #0D5F59 */
+  --c-primary-light: 204 251 241; /* #CCFBF1 */
+  --c-success: 22 163 74; /* #16A34A */
+  --c-success-light: 220 252 231; /* #DCFCE7 */
+  --c-warning: 217 119 6; /* #D97706 */
+  --c-warning-light: 254 243 199; /* #FEF3C7 */
+  --c-danger: 220 38 38; /* #DC2626 */
+  --c-danger-light: 254 226 226; /* #FEE2E2 */
+  --c-info: 37 99 235; /* #2563EB */
+  --c-info-light: 219 234 254; /* #DBEAFE */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-bg: 11 17 32;
+    --c-surface: 30 41 59;
+    --c-border: 51 65 85;
+    --c-ink: 241 245 249;
+    --c-ink2: 203 213 225;
+    --c-muted: 148 163 184;
+    --c-primary: 20 184 166;
+    --c-primary-hover: 45 212 191;
+    --c-primary-light: 19 78 74;
+    --c-success: 74 222 128;
+    --c-success-light: 6 46 29;
+    --c-warning: 251 191 36;
+    --c-warning-light: 69 42 7;
+    --c-danger: 248 113 113;
+    --c-danger-light: 69 26 26;
+    --c-info: 96 165 250;
+    --c-info-light: 23 37 84;
+  }
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif';
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-ink));
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-ink));
+  min-height: 100dvh;
+}
+
+/* Clinical photos must not be saved via long-press / drag / right-click. */
+.no-save {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Camera screen is always dark as specified */
+.camera-dark {
+  background: #000000;
+}

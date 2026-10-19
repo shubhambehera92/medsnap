@@ -1,0 +1,29 @@
+{
+  "name": "medsnap",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MedSnap — secure clinical photo capture PWA (hackathon prototype, DEMO DATA only)",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "setup": "npm install",
+    "dev": "npm run dev -w client",
+    "dev:web": "npm run dev -w client",
+    "dev:api": "npm run dev -w server",
+    "build": "npm run build -w client",
+    "preview": "npm run preview -w client",
+    "typecheck": "npm run typecheck -w client",
+    "icons": "node client/scripts/gen-icons.mjs",
+    "seed": "npm run seed -w server",
+    "start": "npm run start -w server",
+    "demo": "npm run build && npm run start -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}
